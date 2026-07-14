@@ -17,12 +17,15 @@
 POST https://api.anthropic.com/v1/claude_code/routines/trig_01Xq9YXAjxMfGfR1WaEXTVcJ/fire
 ```
 
-Required headers:
+Required headers (confirmed from this routine's own "Example request" panel
+on its Call via API trigger):
 - `Authorization: Bearer <token>` — get this token from the Routine's page in
   the Claude Code web app (claude.ai/code/routines) — this is per-routine and
   not something an MCP tool call can hand back.
+- `anthropic-version: 2023-06-01`
 - `anthropic-beta: experimental-cc-routine-2026-04-01` — required beta header;
   the endpoint is still in research preview so this may change.
+- `Content-Type: application/json`
 
 **Important — the body has exactly one field, `text`, and it is freeform,
 unparsed text.** Per the docs: *"if you send JSON or another structured
@@ -84,8 +87,12 @@ expressions: `{{$json.data}}` (base64 string), `{{$json.fileName}}`,
 - **Authentication:** Header Auth credential — `Authorization: Bearer <token
   from the Routine's page>`
 - **Send Headers:** ON (in addition to the Authentication credential above)
-  — add `anthropic-beta: experimental-cc-routine-2026-04-01`
-- **Send Body:** ON, Body Content Type: **JSON**
+  — add these two headers:
+  - `anthropic-version: 2023-06-01`
+  - `anthropic-beta: experimental-cc-routine-2026-04-01`
+- **Send Body:** ON, Body Content Type: **JSON** (this also sets
+  `Content-Type: application/json` for you — no need to add it under Send
+  Headers too)
 - **Body:**
 
 ```json
