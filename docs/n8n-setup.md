@@ -11,11 +11,39 @@
   re-create/update the Routine if the normalization logic ever needs to
   change.
 
-**To get the fire endpoint + bearer token**: open the Routines list in the
-Claude Code web app (claude.ai/code) and find "Sales Invoice Normalizer". Its
-detail page shows the HTTPS `.../v1/claude_code/routines/{routine_id}/fire`
-URL and bearer token n8n needs — those aren't something an MCP tool call can
-hand back, so grab them from the UI.
+**Fire endpoint** (per the [Claude Platform API docs](https://platform.claude.com/docs/en/api/claude-code/routines-fire)):
+
+```
+POST https://api.anthropic.com/v1/claude_code/routines/trig_01Xq9YXAjxMfGfR1WaEXTVcJ/fire
+```
+
+Required headers:
+- `Authorization: Bearer <token>` — get this token from the Routine's page in
+  the Claude Code web app (claude.ai/code/routines) — this is per-routine and
+  not something an MCP tool call can hand back.
+- `anthropic-beta: experimental-cc-routine-2026-04-01` — required beta header;
+  the endpoint is still in research preview so this may change.
+
+**Important — the body has exactly one field, `text`, and it is freeform,
+unparsed text.** Per the docs: *"if you send JSON or another structured
+payload, the routine receives it as a literal string."* There is no
+multipart/file-upload support on this endpoint — a file can only get in by
+being embedded as base64 inside that string, which the Routine's own prompt
+then parses back out as JSON. (We tried skipping this with n8n's Form-Data
+body type; it doesn't apply here since the endpoint has no binary/multipart
+handling at all.)
+
+**No idempotency key.** Each successful call spawns a brand-new session with
+no dedup — if n8n's HTTP Request node retries on timeout/error, you get
+multiple sessions processing the same file. Turn off automatic retries on
+this node (Settings tab → "Retry On Fail") or dedupe on the n8n side.
+
+Success response looks like:
+```json
+{"type": "routine_fire", "claude_code_session_id": "...", "claude_code_session_url": "..."}
+```
+That's just an "accepted" acknowledgement — the actual normalized result
+arrives later via your Webhook node, not in this response.
 
 ## n8n workflow shape
 
@@ -52,22 +80,27 @@ expressions: `{{$json.data}}` (base64 string), `{{$json.fileName}}`,
 ### 2. HTTP Request node (fires the Routine)
 
 - **Method:** POST
-- **URL:** the fire URL from the Routine's page (ends in `/fire`)
-- **Authentication:** Header Auth — `Authorization: Bearer <token from the
-  Routine's page>`
+- **URL:** `https://api.anthropic.com/v1/claude_code/routines/trig_01Xq9YXAjxMfGfR1WaEXTVcJ/fire`
+- **Authentication:** Header Auth credential — `Authorization: Bearer <token
+  from the Routine's page>`
+- **Send Headers:** ON (in addition to the Authentication credential above)
+  — add `anthropic-beta: experimental-cc-routine-2026-04-01`
 - **Send Body:** ON, Body Content Type: **JSON**
 - **Body:**
 
 ```json
 {
-  "text": "{{ JSON.stringify({ file_base64: $json.data, file_name: $json.fileName, mime_type: $json.mimeType, sheet_url: $('On form submission').item.json.sheet_url, callback_url: 'https://<your-n8n-host>/webhook/<callback-id>' }) }}"
+  "text": "={{ JSON.stringify({ file_base64: $json.data, file_name: $('On form submission').item.json.file.filename, mime_type: $('On form submission').item.json.file.mimetype, sheet_url: $('On form submission').item.json['google sheet url'], callback_url: 'https://<your-n8n-host>/webhook/<callback-id>' }) }}"
 }
 ```
 
-Adjust `$('On form submission').item.json.sheet_url` to wherever the Google
-Sheet URL actually lives in your form/trigger data. Replace the
+Reference the trigger node by name (`$('On form submission')...`) rather
+than plain `$json` for `file_name`/`mime_type`/`sheet_url`, since the binary
+conversion node's output may not carry those fields through. Replace the
 `callback_url` value with your real Webhook node's production URL (see
-below) — it can be hardcoded here since it doesn't change between runs.
+below) — it can be hardcoded here since it doesn't change between runs. Also
+turn off "Retry On Fail" in this node's Settings tab (see the idempotency
+note above).
 
 ### 3. Webhook node (receives the normalized result)
 
