@@ -98,10 +98,11 @@ never need to touch the fire request body, which both shrinks the request
 and avoids the multi-minute hang we saw when Claude had to reproduce a
 ~62,000-character base64 blob as a literal tool-call argument to decode it.
 
-The upload node's output gives you a file ID (and/or a `webContentLink` /
-`uc?id=...&export=download`-style URL, depending on the node version) — use
-either; the Routine extracts the file ID out of a full URL itself, or
-accepts a bare ID directly.
+The upload node's output (confirmed field names from a real test): `id`
+(bare Drive file ID), `name`, `mimeType`, `webContentLink` (a
+`uc?id=...&export=download`-style URL), `webViewLink`. Use `id` directly for
+`file_url_or_id` — simplest, no URL parsing needed; `webContentLink` also
+works since the Routine extracts the file ID out of a full URL itself.
 
 Whether to leave the uploaded file **private** (default) or share it
 "Anyone with the link" is your call — the Routine's preferred path
@@ -126,14 +127,14 @@ as a fallback path if the connector-based fetch ever fails.
   level:
 
 ```
-{{ JSON.stringify({ text: JSON.stringify({ file_url_or_id: $json.id, file_name: $('On form submission').item.json.file.filename, mime_type: $('On form submission').item.json.file.mimetype, callback_url: 'https://blackswanmedia.app.n8n.cloud/webhook/claude-routine-callback' }) }) }}
+{{ JSON.stringify({ text: JSON.stringify({ file_url_or_id: $json.id, file_name: $json.name, mime_type: $json.mimeType, callback_url: 'https://blackswanmedia.app.n8n.cloud/webhook/claude-routine-callback' }) }) }}
 ```
 
-Adjust `$json.id` to whatever field the Google Drive upload node actually
-names its output (check that node's own output panel — commonly `id`, or a
-full link field like `webContentLink`; either works, the Routine extracts
-the file ID from a URL itself). Also turn off "Retry On Fail" in this
-node's Settings tab (see the idempotency note above).
+This assumes the HTTP Request node sits directly after the Google Drive
+Upload node, so `$json` refers to its output (`id`/`name`/`mimeType`) —
+no need to reference the upload node by name unless another node sits
+between them. Also turn off "Retry On Fail" in this node's Settings tab
+(see the idempotency note above).
 
 ### 3. Webhook node (receives the normalized result)
 
